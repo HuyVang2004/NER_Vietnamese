@@ -18,26 +18,28 @@ def train_epoch(model, dataloader, optimizer, device, pad_tag_id=0):
         mask = batch["mask"].to(device)
        
         optimizer.zero_grad()
-        loss = model(wids, mask, tags=tids)  
+        loss = model(widx=wids, mask=mask, tags=tids)  
         loss.backward()
 
         torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
 
         optimizer.step()
         total_loss += loss.item()
+
     return total_loss / len(dataloader)
 
 
 def train(model, train_loader, dev_loader, optimizer, 
-          device, id2tag, num_epochs=10, use_crf=True):
+           id2tag, device, num_epochs=10, use_crf=True):
 
     for epoch in range(1, num_epochs + 1):
         model.train()
-        loss = train_epoch(model, train_loader, optimizer, device, pad_tag_id=0)
+        mean_loss = train_epoch(model, train_loader, optimizer, device, pad_tag_id=0)
 
         dev_loss, dev_f1, dev_report = evaluate(model, dev_loader, device, id2tag, use_crf)
-        print(f"Epoch {epoch}: Train Loss={loss:.4f}, Dev Loss={dev_loss:.4f}, Dev F1={dev_f1:.4f}")
+        print(f"Epoch {epoch}: Train Loss={mean_loss:.4f}, Dev Loss={dev_loss:.4f}, Dev F1={dev_f1:.4f}")
         print("Dev Classification Report:\n", dev_report)
+
 
 def train_loop(model, train_dataset, dev_dataset, test_dataset, 
                device, id2tag, out_dir: str, num_epochs: int = 10, 

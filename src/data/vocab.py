@@ -26,7 +26,7 @@ class Vocab:
         return len(self.idx2sen)
     
     def word2idx(self, w):
-        return self.sen2idx.get(w, default=self.sen2idx[w])
+        return self.sen2idx.get(w, self.sen2idx[self.unk_token])
     
     def idx2word(self, idx):
         return self.idx2sen[idx]

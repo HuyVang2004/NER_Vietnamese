@@ -30,41 +30,28 @@ def collate_dl(batch, pad_token_id=0, pad_tag_id=0):
         "words": words_list
     }
 
-def collate_phobert(batch, pad_tag_id=0):
-    input_ids = [item["widx"] for item in batch]
-    attention_mask = [item["mask"] for item in batch]
-    word_ids_list = [item["word_idx"] for item in batch]
-    tag_ids = [item["tidx"] for item in batch]
+def collate_phobert(batch, tokenizer):
+    
+    input_ids = [item["input_ids"] for item in batch]
+    attention_masks = [item["attention_mask"] for item in batch]
+    labels = [item["labels"] for item in batch]
 
-    max_len = max(len(x) for x in input_ids)
+    batch_enc = tokenizer.pad(
+        {"input_ids": input_ids, "attention_mask": attention_masks},
+        padding=True,
+        return_tensors="pt"
+    )
 
-    input_ids_padded, attention_mask_padded, tag_ids_padded = [], [], []
+    max_len = batch_enc["input_ids"].size(1)
+    def pad_tensor(seq, pad_value, dtype):
+        out = torch.full((max_len,), pad_value, dtype=dtype)
+        out[:len(seq)] = seq
+        return out
 
-    for i in range(len(batch)):
-        word_ids = word_ids_list[i]
-        tags = tag_ids[i]
-        token_tags = []
-
-        prev_word = None
-        for wid in word_ids:
-            if wid is None:
-                token_tags.append(pad_tag_id)
-            elif wid != prev_word:
-                token_tags.append(tags[wid])
-            else:
-                token_tags.append(tags[wid])
-            prev_word = wid
-
-        pad_len = max_len - len(token_tags)
-        token_tags += [pad_tag_id] * pad_len
-
-        input_ids_padded.append(torch.cat([x for x in input_ids[i]] + [torch.zeros(pad_len, dtype=torch.long)]))
-        attention_mask_padded.append(torch.cat([x for x in attention_mask[i]] + [torch.zeros(pad_len, dtype=torch.long)]))
-        tag_ids_padded.append(torch.tensor(token_tags, dtype=torch.long))
+    labels = torch.stack([pad_tensor(l, -100, torch.long) for l in labels])
 
     return {
-        "input_ids": torch.stack(input_ids_padded),
-        "attention_mask": torch.stack(attention_mask_padded),
-        "labels": torch.stack(tag_ids_padded)
+        "input_ids": batch_enc["input_ids"],
+        "attention_mask": batch_enc["attention_mask"],
+        "labels": labels,
     }
-

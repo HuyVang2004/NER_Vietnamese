@@ -1,38 +1,45 @@
-import torch
+# evaluate.py (replace existing evaluate with this)
 from tqdm import tqdm
+import torch
 from seqeval.metrics import classification_report, f1_score
 
 def evaluate(model, dataloader, device, id2tag, use_crf=True):
     model.eval()
-    preds = []
-    golds = []
+    preds, golds = [], []
+    total_loss, total_batches = 0.0, 0
+
     with torch.no_grad():
-        for batch in tqdm(dataloader):
+        for batch in tqdm(dataloader, desc="Evaluating"):
             wids = batch["widx"].to(device)
             tids = batch["tidx"].to(device)
             mask = batch["mask"].to(device)
-            
+
             if use_crf:
-                loss = model(wids, mask, tags=tids)
-                batch_loss = loss.mean().item() if loss.dim() > 0 else loss.item()
+                # model should return scalar NLL (positive)
+                loss = model(widx=wids, mask=mask, tags=tids)
+                # expect positive loss (NLL). If it's negative, there is bug in CRF.forward.
+                batch_loss = loss.item() if isinstance(loss, torch.Tensor) else float(loss)
                 total_loss += batch_loss
                 total_batches += 1
 
-                batch_paths = model(wids, mask, tags=None)  # list of paths
-                
-                # map to tags (strings)
+                batch_paths = model(widx=wids, mask=mask, tags=None)  # list of lists
+
                 for i, path in enumerate(batch_paths):
-                    pred_tags = [id2tag[t] for t in path]
-                    gold_len = mask[i].sum().item()
-                    gold_tags = [id2tag[t.item()] for t in tids[i, :gold_len]]
+                    gold_len = int(mask[i].sum().item())
+                    
+                    pred_tags = [id2tag.get(int(t), "O") for t in path[:gold_len]]
+                    gold_tags = [id2tag.get(int(t), "O") for t in tids[i, :gold_len]]
                     preds.append(pred_tags)
                     golds.append(gold_tags)
+                    # print(id2tag)
+                    # print(preds)
+                    # print(golds)
+
             else:
                 emissions = model.bilstm(wids, mask)  # [B,L,T]
                 loss_fn = torch.nn.CrossEntropyLoss(ignore_index=-100)
 
-                # reshape for CE: (B*L, T)
-                active_tokens = mask.view(-1) == 1
+                active_tokens = (mask.view(-1) == 1)
                 logits = emissions.view(-1, emissions.shape[-1])
                 labels = tids.view(-1)
 
@@ -43,19 +50,21 @@ def evaluate(model, dataloader, device, id2tag, use_crf=True):
                     total_loss += batch_loss
                     total_batches += 1
 
-                _, max_tags = emissions.max(dim=-1)  # [B,L]
+                _, max_tags = emissions.max(dim=-1)
                 for i in range(wids.size(0)):
-                    gold_len = mask[i].sum().item()
-                    pred_tags = [id2tag[t.item()] for t in max_tags[i, :gold_len]]
-                    gold_tags = [id2tag[t.item()] for t in tids[i, :gold_len]]
+                    gold_len = int(mask[i].sum().item())
+                    pred_tags = [id2tag.get(int(t), "O") for t in max_tags[i, :gold_len]]
+                    gold_tags = [id2tag.get(int(t), "O") for t in tids[i, :gold_len]]
                     preds.append(pred_tags)
                     golds.append(gold_tags)
- 
+
     mean_loss = total_loss / max(total_batches, 1)
+
     try:
         report = classification_report(golds, preds, digits=4)
         f1 = f1_score(golds, preds)
-    except Exception:
+    except Exception as e:
+        print(f"[Warning] seqeval not available or error ({e}). Using fallback accuracy.")
         total, correct = 0, 0
         for p, g in zip(preds, golds):
             for a, b in zip(p, g):

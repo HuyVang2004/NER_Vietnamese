@@ -4,7 +4,7 @@ import torch.nn as nn
 class BiLSTM(nn.Module):
     def __init__(self, vocab_size, tagset_size, embedding_dim=200,
                  hidden_dim=256, pretrained_emb=None, dropout=0.3, pad_idx=0):
-        super.__init__()
+        super().__init__()
 
         self.embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=pad_idx)
         if pretrained_emb is not None:
